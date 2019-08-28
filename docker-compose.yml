@@ -1,0 +1,27 @@
+version: '3'
+services:
+  # Processing
+  processor:
+    build: ./processing
+    restart: always
+    depends_on:
+      - db
+  # Database
+  db:
+    image: postgres:11
+    restart: always
+    volumes:
+      - ./data:/var/lib/postgresql/data/pgdata
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: somethingrandom
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_DB: imports
+  # Example viwer
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+    depends_on:
+      - db
