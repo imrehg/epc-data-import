@@ -1,2 +1,5 @@
 # The database folder created by the db container
 data
+
+# Python cache
+__pycache__
