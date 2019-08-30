@@ -189,6 +189,9 @@ def create_records(record_queue, conn):
             # Just wait for new tasks
             pass
 
+###
+# Archive handling functions
+###
 def archive_enqueue(import_file, processing_queue):
     """ Read the input CSV from a zip file and push lines onto the processing queue
 
