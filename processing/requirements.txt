@@ -1,1 +1,2 @@
-psycopg2
+# PostgreSQL communication
+psycopg2==2.8.3

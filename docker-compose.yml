@@ -3,9 +3,18 @@ services:
   # Processing
   processor:
     build: ./processing
-    restart: always
+    restart: "no"
     depends_on:
       - db
+    volumes:
+      - ./import:/import
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: somethingrandom
+      POSTGRES_DB: imports
+      THREADS: 500
+      MAXRECORDS: 50000
+
   # Database
   db:
     image: postgres:11
@@ -17,6 +26,7 @@ services:
       POSTGRES_PASSWORD: somethingrandom
       PGDATA: /var/lib/postgresql/data/pgdata
       POSTGRES_DB: imports
+
   # Example viwer
   adminer:
     image: adminer
