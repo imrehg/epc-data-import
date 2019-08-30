@@ -50,9 +50,11 @@ The processor architecture here as follows:
 
 This setup allows parallelizing some of the slow functions (such as waiting for the API replies in the record processing step), while a given database connection without much complexity.
 
-##
+## Project comments
 
 * What tools/resources you would use?
+
+Here the tooling is mostly Python for the processing for more flexible splitting of jobs. Docker enables easier deployment.
 
 * How you would scale the import?
 
@@ -66,7 +68,11 @@ The import should be possible to run on a weekly basis (likely with performance 
 
 This also touches on how the data is gathered: currently the [https://epc.opendatacommunities.org/](https://epc.opendatacommunities.org/) website is relatively rough to import from. The download links are S3 signed URLs which expire, and the login is based on receiving an email with a specific code. This "trigger login" -> "automatically receive email and extract login link" -> "grab S3 signed URL" -> download can be automated but might need more infrastricture, and feels relatively fragile (mostly due to the email.)
 
+As a further note on the import, currently the pattern of getting the data to the processing container is via a docker volume. That would work also if the downloads would be automatic as above. A shared volume could be the place where a "download service" would place the task, and the processing service could notice the files (any additional metadata) and start the import.
+
 And alternative is using [Domestic Energy Performance Certificates API](https://epc.opendatacommunities.org/docs/api/domestic), which would allow likely more frequent improts. There the first hurdle is that max query size is limited, so any scraping needs to be done with searches that can iterate over the entire data. A possible way forward with that is searching by "lodgement day", and iterate. There are likely corner cases, but from the given variables, this feels the most iterable.
+
+If the processing service would be to scrape the API instead of the zip download, then the processing tool can have a small API endpoint to trigger a task by a request, or the processing can be rerun as a K8s cronjob.
 
 * How would you know when the import has failed?
 
