@@ -1,6 +1,6 @@
 version: '3'
 services:
-  # Processing
+  # Processing worker
   processor:
     build: ./processing
     restart: "no"
@@ -9,29 +9,43 @@ services:
     volumes:
       - ./import:/import
     environment:
+      # Make sure these `POSTGRES_` vars are the same as for the `db` service
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: somethingrandom
       POSTGRES_DB: imports
+      # The number of threads to run the data processing with
+      # If not supplied, the code defaults to 100
       THREADS: 500
+      # The number of records to import
+      # If not supplied, defaults to 0, which means "all data"
       MAXRECORDS: 50000
+      # The file to be imported can be changed by this env var,
+      # below is the default value used by the the script
+      # IMPORT_FILE: 'all-domestic-certificates.zip'
 
-  # Database
+  # Database storage
   db:
     image: postgres:11
     restart: always
     volumes:
       - ./data:/var/lib/postgresql/data/pgdata
     environment:
+      # For this repo, you most likely only ever  want to modify the
+      # User and password variables. If you change them, likely want to
+      # Throw away any existing database
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: somethingrandom
       PGDATA: /var/lib/postgresql/data/pgdata
+      # The name of the database to find the relevant table with the imported data in
       POSTGRES_DB: imports
 
   # Example viwer
   adminer:
-    image: adminer
+    image: adminer:4.7.3
     restart: always
     ports:
       - 8080:8080
     depends_on:
       - db
+    environment:
+      ADMINER_DEFAULT_SERVER: db

@@ -1,3 +1,12 @@
+"""EPC data importer / processor
+
+This module implements a proof-of-concept EPC data importer and processor.
+It is tasked with taking a zip file, extracting records, processing them,
+and saving them into a database
+
+Attributes (module level):
+    LIMIT_DB_CONNECT_RETRIES: number of retries when trying to connect to the database
+"""
 import csv
 import io
 import logging
@@ -44,7 +53,7 @@ def parseRow(row):
         record = None
     return record
 
-def processRow(input_queue, record_queue):
+def process_row(input_queue, record_queue):
     """ Process a single row of input, and pass it on to record handling queue
 
     Args:
@@ -63,6 +72,9 @@ def processRow(input_queue, record_queue):
 
                 # Simulate long-ish API call
                 time.sleep(0.250)
+                # Dummy values
+                record['latitude'] = 0.0
+                record['longitude'] = 0.0
 
                 # Put the record onto the record queue to be added to the database
                 record_queue.put(record)
@@ -97,10 +109,10 @@ def connect_db():
     retry_counter = 0
     while not conn:
         try:
-            conn = psycopg2.connect(user = os.getenv("POSTGRES_USER"),
-                                    password = os.getenv("POSTGRES_PASSWORD"),
-                                    host = "db",
-                                    database = os.getenv("POSTGRES_DB"))
+            conn = psycopg2.connect(user=os.getenv("POSTGRES_USER"),
+                                    password=os.getenv("POSTGRES_PASSWORD"),
+                                    host="db",
+                                    database=os.getenv("POSTGRES_DB"))
         except psycopg2.OperationalError:
             if retry_counter >= LIMIT_DB_CONNECT_RETRIES:
                 raise
@@ -125,7 +137,9 @@ def create_tables(conn):
             transaction_type VARCHAR(255),
             total_foor_area FLOAT,
             address VARCHAR(255),
-            postcode VARCHAR(255)
+            postcode VARCHAR(255),
+            latitude FLOAT,
+            longitude FLOAT
         )
         """
     try:
@@ -137,7 +151,7 @@ def create_tables(conn):
         if error.__class__.__name__ == "DuplicateTable":
             logger.debug("Database table already exists.")
         else:
-            raise(error)
+            raise error
 
 def create_records(record_queue, conn):
     """ Worker process to add pre-processed records to the database
@@ -151,14 +165,14 @@ def create_records(record_queue, conn):
     """
     # The import SQL, if there's an item with the given 'lmk_key', ignore
     sql = """
-        INSERT INTO epc (lmk_key, lodgement_date, transaction_type, total_foor_area, address, postcode)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO epc (lmk_key, lodgement_date, transaction_type, total_foor_area, address, postcode, latitude, longitude)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (lmk_key)
         DO NOTHING;
     """
     # # An alternate version, to update any record that is matched with the given key
     # sql = """
-    #     INSERT INTO epc (lmk_key, lodgement_date, transaction_type, total_foor_area, address, postcode)
+    #     INSERT INTO epc (lmk_key, lodgement_date, transaction_type, total_foor_area, address, postcode, latitude, longitude)
     #     VALUES (%s, %s, %s, %s, %s, %s)
     #     ON CONFLICT (lmk_key)
     #     DO
@@ -168,6 +182,8 @@ def create_records(record_queue, conn):
     #             total_foor_area = EXCLUDED.total_foor_area,
     #             address = EXCLUDED.address,
     #             postcode = EXCLUDED.postcode;
+    #             latitude = EXCLUDED.latitude;
+    #             longitude = EXCLUDED.longitude;
     # """
 
     # Start the worker process
@@ -178,10 +194,20 @@ def create_records(record_queue, conn):
             try:
                 # Add item to the database
                 cur = conn.cursor()
-                cur.execute(sql, (record['lmk_key'], record['lodgement_date'], record['transaction_type'], record['total_floor_area'], record['addtess'], record['postcode']))
+                cur.execute(sql,
+                            (record['lmk_key'],
+                             record['lodgement_date'],
+                             record['transaction_type'],
+                             record['total_floor_area'],
+                             record['addtess'],
+                             record['postcode'],
+                             record['latitude'],
+                             record['longitude'],
+                            )
+                        )
                 cur.close()
             except (Exception, psycopg2.OperationalError) as error:
-                raise(error)
+                raise error
             finally:
                 # Feed back to the queue for job counting
                 record_queue.task_done()
@@ -209,7 +235,7 @@ def archive_enqueue(import_file, processing_queue):
     # This is to set a manageable limit, specific for this case
     max_records = int(os.getenv("MAXRECORDS", 0))
     max_records_reached = False
-    counter=0
+    counter = 0
 
     logger.info(f'Import file: {import_file}')
     input_archive = zipfile.ZipFile(import_file)
@@ -247,20 +273,19 @@ def main(import_file):
     conn.set_session(autocommit=True)
     # Create the requited database tables if they don't exists yet
     create_tables(conn)
-    
 
     ## Task management setup
     # Database queue and worker setup
     db_queue = mp.JoinableQueue()
-    db_process = mp.Process(target=create_records, args=(db_queue,conn))
+    db_process = mp.Process(target=create_records, args=(db_queue, conn))
     db_process.start()
 
     # Imput processor queue and worker pool setup
     processing_queue = mp.JoinableQueue()
-    processing_pool = mp.Pool(int(os.getenv("THREADS", 100)), processRow, (processing_queue,db_queue))
+    processing_pool = mp.Pool(int(os.getenv("THREADS", 100)), process_row, (processing_queue, db_queue))
 
     total_records = archive_enqueue(import_file, processing_queue)
-                
+
     logger.info("Processing enqueued tasks")
     while True:
         # Check queue sizes, and display them in the logs
@@ -284,9 +309,9 @@ def main(import_file):
 
 if __name__ == "__main__":
     try:
-        import_file=sys.argv[1]
+        import_file_arg = sys.argv[1]
     except IndexError:
         print("Input file argument not passed", file=sys.stderr)
         raise
 
-    main(import_file)
+    main(import_file_arg)
